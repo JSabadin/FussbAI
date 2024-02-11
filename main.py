@@ -4,6 +4,7 @@ import time
 from agent import SACAgent, ReplayBuffer
 from game import SoccerEnv
 import torch
+import matplotlib.pyplot as plt
 
 # Check if CUDA is available and set the device accordingly
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -14,13 +15,13 @@ if __name__ == "__main__":
     env = SoccerEnv()
 
     # Initialization parameters
-    batch_size = 2048
+    batch_size = 256
     discount = 0.99
     tau = 0.005  # Target network update rate
     learning_rate = 3e-4
     alpha_lr = 3e-4  # Learning rate for temperature
 
-    state_dim = 37
+    state_dim = 36
     action_dim = 16  # Assuming continuous action space
 
     # Directory for saving models
@@ -41,21 +42,24 @@ if __name__ == "__main__":
 
     def update_sac():
         states, actions, rewards, next_states, dones = replay_buffer.sample(batch_size)
-        # Convert numpy arrays to tensors and send to device (GPU if available)
-        states = torch.FloatTensor(states).to(device)
-        actions = torch.FloatTensor(actions).to(device)
-        rewards = torch.FloatTensor(rewards).unsqueeze(1).to(device)
-        next_states = torch.FloatTensor(next_states).to(device)
-        dones = torch.FloatTensor(dones).unsqueeze(1).to(device)
+        # Directly convert numpy arrays to tensors on the specified device
+        states = torch.tensor(states, device=device, dtype=torch.float)
+        actions = torch.tensor(actions, device=device, dtype=torch.float)
+        rewards = torch.tensor(rewards, device=device, dtype=torch.float).unsqueeze(1)
+        next_states = torch.tensor(next_states, device=device, dtype=torch.float)
+        dones = torch.tensor(dones, device=device, dtype=torch.float).unsqueeze(1)
 
         sac_agent.update_parameters(states, actions, rewards, next_states, dones, discount, tau)
 
+
     num_episodes = 10000  # Number of episodes to train
+    update_every = 50
     for episode in range(num_episodes):
         state = env.reset()
         state = np.array(state, dtype=np.float32)  # Ensure state is a float32 numpy array
         episode_reward = 0
         done = False
+        steps = 0  # Track steps within the episode
         while not done:
             action = sac_agent.select_action(np.array(state))
             # Check if the ball is inside the table before taking action
@@ -66,7 +70,12 @@ if __name__ == "__main__":
                 state = next_state
                 episode_reward += reward
 
-            time.sleep(0.05)  # Delay for simulating real-time actions
+                steps += 1
+                # Check if it's time to update the SAC agent
+                if steps % update_every == 0 and replay_buffer.__len__() >= batch_size:
+                    update_sac()
+
+            time.sleep(0.1)  # Delay for simulating real-time actions
 
         print(f"Episode {episode}: Total Reward: {episode_reward}")
 

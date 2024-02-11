@@ -28,16 +28,25 @@ class SoftActor(nn.Module):
         log_std = torch.clamp(log_std, self.log_std_min, self.log_std_max)
         return mean, log_std
     
+    # With action scaling
     def sample(self, state):
-        state = state.to(device)
         mean, log_std = self.forward(state)
         std = log_std.exp()
         normal = torch.distributions.Normal(mean, std)
         x_t = normal.rsample()
         actions = torch.tanh(x_t)
+        
+        # Modify actions based on their index
+        scaled_actions = torch.zeros_like(actions)
+        for i in range(actions.size(-1)):
+            if i % 4 == 0:
+                scaled_actions[:, i] = actions[:, i]
+            else:
+                scaled_actions[:, i] = (actions[:, i] + 1) / 2
+        
         log_prob = normal.log_prob(x_t) - torch.log(1 - actions.pow(2) + 1e-6)
         log_prob = log_prob.sum(1, keepdim=True)
-        return actions, log_prob
+        return scaled_actions, log_prob
 
 
 # Critic Network
@@ -75,7 +84,7 @@ class SACAgent:
         self.critic_2 = Critic(state_dim, action_dim).to(device)
         self.target_critic_1 = Critic(state_dim, action_dim).to(device)
         self.target_critic_2 = Critic(state_dim, action_dim).to(device)
-        self.temperature = Temperature().to(device)
+        self.temperature = Temperature(initial_value=1.5).to(device)
         self.replay_buffer = replay_buffer
         self.highest_total_reward = -np.inf  # Placeholder for highest total reward
 
@@ -96,14 +105,6 @@ class SACAgent:
         return actions.cpu().numpy()[0]
     
     def update_parameters(self, states, actions, rewards, next_states, dones, discount, tau):
-        states, actions, rewards, next_states, dones = \
-        states.to(device), actions.to(device), rewards.to(device), next_states.to(device), dones.to(device)
-        states = torch.FloatTensor(states)
-        actions = torch.FloatTensor(actions)
-        rewards = torch.FloatTensor(rewards).unsqueeze(1)
-        next_states = torch.FloatTensor(next_states)
-        dones = torch.FloatTensor(dones).unsqueeze(1)
-
         # Update Critic Networks
         with torch.no_grad():
             next_actions, log_probs = self.actor.sample(next_states)

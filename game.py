@@ -145,14 +145,14 @@ class SoccerEnv:
         # Process camera data
         ball_x_pose = (CD0["ball_x"] + CD1["ball_x"]) / 2
         ball_y_pose = (CD0["ball_y"] + CD1["ball_y"]) / 2
-
+ 
         # Average ball velocity
         ball_x_vel = (CD0["ball_vx"] + CD1["ball_vx"]) / 2
         ball_y_vel = (CD0["ball_vy"] + CD1["ball_vy"]) / 2
 
         # Average ball size
         ball_size =  (CD0["ball_size"] + CD1["ball_size"]) / 2
-
+  
         # PLAYER POSITIONS
         relative_friendly_y_positions = [] # 1 goalies, 2 defenders, 5 midfielders, 3 forwards
         friendly_players_rod_rotations = [] # 1 goalies, 2 defenders, 5 midfielders, 3 forwards, but the data is we are receiving is in order 3,5,2,1 !
@@ -171,34 +171,30 @@ class SoccerEnv:
                 
                 # Append position based on mapping
                 if playerMapping[i] < 0: # Enemy rod
-                    relative_enemy_y_positions .insert(0, player_position_y - ball_y_pose)  # Insert at beginning to reverse order 3,5,2,1 -> 1,2,5,3
+                    relative_enemy_y_positions .insert(0, (player_position_y - ball_y_pose)/self.geometry["field"]["dimension_x"])  # Insert at beginning to reverse order 3,5,2,1 -> 1,2,5,3
                 else: # Friendly rod
-                    relative_friendly_y_positions .append(player_position_y - ball_y_pose)
+                    relative_friendly_y_positions .append((player_position_y - ball_y_pose)/self.geometry["field"]["dimension_x"])
                     # Reward for being close to the ball
                     dx = np.abs(player_x_position - ball_x_pose)
                     dy = np.abs(player_position_y - ball_y_pose)
                     if dy < 30 and dx < 50: 
                         reward += 0.3  # Reward for being close to the ball
-                        # print("Close to ball")
-                        # print(f"Play {player_idx} x: {player_x_position:.3f} y: {player_position_y:.3f}, v_x = {ball_x_vel:.3f}, v_y = {ball_y_vel:.3f}, b_x = {ball_x_pose:.3f}, b_y = {ball_y_pose:.3f}")
-                        # print(f"previous: {self.previous_ball_x_vel}, curent: {ball_x_vel}")
                         if self.previous_ball_x_vel * ball_x_vel < 0 and self.previous_ball_x_vel < 0:
                             reward += 7  # Reward for a successful block
                             # print("Block Successful")
                         
             if playerMapping[i] < 0:
-                enemy_players_rod_rotations.insert(0, (CD0["rod_angle"][i]+CD1["rod_angle"][i])/2)  # Insert at beginning to reverse order 3,5,2,1 -> 1,2,5,3
+                enemy_players_rod_rotations.insert(0, (CD0["rod_angle"][i]+CD1["rod_angle"][i]) / 2 / 32)  # Insert at beginning to reverse order 3,5,2,1 -> 1,2,5,3
             else:
-                friendly_players_rod_rotations.append((CD0["rod_angle"][i]+CD1["rod_angle"][i])/2)
+                friendly_players_rod_rotations.append((CD0["rod_angle"][i]+CD1["rod_angle"][i]) / 2 / 32)
 
 
             # Predict future ball positions (for simplicity, predict one step ahead)
-        delta_t = 4  # Future time step to predict (you can adjust this based on your simulation's time step)
-        future_ball_x_pose = ball_x_pose + ball_x_vel * delta_t
-        future_ball_y_pose = ball_y_pose + ball_y_vel * delta_t
+        delta_t = 0.1  # Future time step to predict (you can adjust this based on your simulation's time step)
+        future_ball_x_pose = (ball_x_pose + ball_x_vel * delta_t)/self.geometry["field"]["dimension_x"]
+        future_ball_y_pose = (ball_y_pose + ball_y_vel * delta_t)/self.geometry["field"]["dimension_y"]
 
-        state = list(chain([ball_x_pose, ball_y_pose, ball_x_vel, ball_y_vel, ball_size, future_ball_x_pose, future_ball_y_pose], relative_friendly_y_positions, friendly_players_rod_rotations, relative_enemy_y_positions, enemy_players_rod_rotations))
-
+        state = list(chain([ball_x_pose/self.geometry["field"]["dimension_x"], ball_y_pose/self.geometry["field"]["dimension_x"], ball_x_vel, ball_y_vel, future_ball_x_pose, future_ball_y_pose], relative_friendly_y_positions, friendly_players_rod_rotations, relative_enemy_y_positions, enemy_players_rod_rotations))
 
         # Reward calculation, where the goal logic is implemented
         goal_scored = goal_received = False
